@@ -3,7 +3,6 @@ const { token } = require('./config.json');
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const fs = require('fs');
 const path = require('path');
-const internal = require('stream');
 const commandsPath = path.join(__dirname, 'commands');
 
 client.once(Events.ClientReady, c => {
@@ -22,15 +21,9 @@ for (const file of fs.readdirSync(commandsPath)) {
 	}
 }
 
-client.on(Events.InteractionCreate, async interaction => {
-	if (!interaction.isChatInputCommand()) return;
-	const command = interaction.client.commands.get(interaction.commandName);
-	if (!command) {
-		console.error(`No command matching ${interaction.commandName} was found.`);
-		return;
-	}
+async function tryExec(interaction, execute) {
 	try {
-		await command.execute(interaction);
+		await execute(interaction);
 	}
 	catch (error) {
 		console.error(error);
@@ -41,12 +34,30 @@ client.on(Events.InteractionCreate, async interaction => {
 			await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
 		}
 	}
-});
+}
 
-client.on(Events.InteractionCreate, interaction => {
-	if (!interaction.isUserContextMenuCommand()) return;
-	const { id } = interaction.targetMessage;
-	console.log(id);
-})
+client.on(Events.InteractionCreate, async interaction => {
+	if (interaction.isStringSelectMenu()) {
+		await tryExec(interaction, async interaction => {
+			let choices = '';
+			await interaction.values.forEach(async value => {
+				choices += value;
+			});
+			await interaction.reply({ content: choices });
+			await interaction.message.delete();
+		});
+		return;
+	}
+	const command = (
+		interaction.isChatInputCommand() ||
+		interaction.isMessageContextMenuCommand() ||
+		interaction.isStringSelectMenu()
+		) && interaction.client.commands.get(interaction.commandName);
+	if (!command) {
+		console.error(`No command matching ${interaction.commandName} was found.`);
+		return;
+	}
+	await tryExec(interaction, command.execute);
+});
 
 client.login(token);
